@@ -32,7 +32,20 @@ _PREDICATES = {
     "labeled": "label",
 }
 _GENERIC = ("succeeded", "successful", "successfully", "completed", "delivered")
-_CLAUSES = re.compile(r"[.!?](?=\s|$)|[,;:\n—–]|\b(?:but|because|so|and)\b", re.I)
+# A colon is a clause boundary except in "successfully: <reference>". There the
+# reference is the same recipient or object complement as "to <reference>" /
+# "(<reference>)", not a second proposition ("Reply sent successfully: …").
+_REFERENCE_PATTERN = (
+    r"[\w.+-]+@[\w.-]+\.[a-z]{2,}"
+    r"|\b(?:msg|message|draft|record|thr|thread)[-_][\w-]+"
+)
+_CLAUSES = re.compile(
+    r"[.!?](?=\s|$)|[,;\n—–]"
+    # Split every colon except the complement in "successfully: <reference>".
+    r"|(?<!successfully):|:(?!\s*(?:" + _REFERENCE_PATTERN + r")\s*[.!?]?$)"
+    r"|\b(?:but|because|so|and)\b",
+    re.I,
+)
 _UNCERTAIN = re.compile(
     r"\b(?:may|might|maybe|possibly|probably|perhaps|whether|if|unknown|unconfirmed|"
     r"hope|hopefully|should|would|will|must|say|said|says|claim|claimed|claims)\b|"
@@ -49,10 +62,7 @@ _NEGATIVE = re.compile(
     r"(?:\s+(?:was|is|were|are|has|have|been|ever|yet|actually))*)\s*$",
     re.I,
 )
-_REFERENCE = re.compile(
-    r"[\w.+-]+@[\w.-]+\.[a-z]{2,}|\b(?:msg|message|draft|record|thr|thread)[-_][\w-]+",
-    re.I,
-)
+_REFERENCE = re.compile(_REFERENCE_PATTERN, re.I)
 
 
 @dataclass(frozen=True)
@@ -265,10 +275,19 @@ def _communication_form(
         rf"(?P<positive_subject>{positive_subject}){argument}(?:\s+(?P<aux>{negative_aux}|{positive_aux}))?)?\s*"
     )
     before = re.fullmatch(grammar, prefix, re.I)
+    # The manner adverb is not a slot that has to follow the recipient.
+    # "Sent successfully to <recipient>" and "Reply sent successfully: <recipient>"
+    # name the same complements as "sent to <recipient> successfully".
+    adverb = r"(?:successfully\s*)?"
     after = re.fullmatch(
-        rf"\s*(?:(?:it|the email|the message)(?:\s+to be safe)?\s*)?"
+        rf"\s*{adverb}"
+        rf"(?:(?:it|the email|the message)(?:\s+to be safe)?\s*)?"
+        rf"{adverb}"
         rf"(?:to\s+(?:thread\s+)?(?:{reference})\s*)?"
-        rf"(?:successfully\s*)?(?:\((?:{reference})\))?\s*",
+        rf"{adverb}"
+        rf"(?:\((?:{reference})\))?"
+        rf"(?::\s*(?:{reference}))?"
+        rf"\s*",
         tail,
         re.I,
     )
